@@ -16,20 +16,20 @@ def generate_launch_description():
         # command line, with this syntax:
         #   ros2 launch [...] thymio_name:=thymio1
         DeclareLaunchArgument(
-            'thymio_name',
-            default_value='thymio0'
+            'rm_name',
+            default_value='RM0'
         ),
         
         # Start a ROS node, equivalent to ros2 run <package_name> <executable_name>
         Node(
-            package='myT_group_K',
-            executable='controller_3',
+            package='RoboticsProject2022',
+            executable='controller_node',
             
             # Launch controller_node in the namespace defined by the thymio_name
             # launch argument (default: /thymio0). Combined with the use of
             # relative topic names in controller_node, this provides a nice way
             # to specify which robot this node should control.
-            namespace=LaunchConfiguration('thymio_name'),
+            namespace=LaunchConfiguration('rm_name'),
             
             # Nodes launched from a launch file print their output to a log file
             # by default. Print to the console to help with debugging.

@@ -13,8 +13,8 @@ from rclpy.qos import qos_profile_sensor_data
 import sys
 
 class ControllerNode(Node):
-    def _init_(self):
-        super()._init_('controller_node')
+    def __init__(self):
+        super().__init__('controller_node')
 
         self.br = CvBridge()
 
@@ -104,8 +104,6 @@ class ControllerNode(Node):
 
 
 
-
-
 def main():
     # Initialize the ROS client library
     rclpy.init(args=sys.argv)
@@ -124,5 +122,5 @@ def main():
     node.stop()
 
 
-if _name_ == '_main_':
+if __name__ == '_main_':
     main()

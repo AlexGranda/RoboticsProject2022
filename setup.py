@@ -23,7 +23,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'robomaster_driver = robomaster_ros.robomaster_driver:main',
+            'robomaster_driver = RoboticsProject2022.robomaster_driver:main',
+            'controller_node = RoboticsProject2022.controller_node:main',
         ],
     },
 )
