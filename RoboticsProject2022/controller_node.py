@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 import tf_transformations
-import cv2
+import cv2, math, time
 from cv_bridge import CvBridge
 
 from geometry_msgs.msg import Twist, Pose
@@ -51,15 +51,14 @@ class ControllerNode(Node):
 
     def camera_callback(self, msg):
         self.image = self.br.imgmsg_to_cv2(msg)
-        cv2.imshow('image',self.image)
+        cv2.imshow('image',self.process_image())
         #current_frame = self.br.imgmsg_to_cv2(msg)
         #cv2.imshow("camera", current_frame)
         cv2.waitKey(1)
 
-        self.get_logger().info(
-            "Here",
-             throttle_duration_sec=0.5 # Throttle logging frequency to max 2Hz
-        )
+
+
+        #self.get_logger().info(f"od={self.image})")
 
 
 
@@ -101,6 +100,12 @@ class ControllerNode(Node):
 
         # Publish the command
         self.vel_publisher.publish(cmd_vel)
+
+    def process_image(self):
+
+        blur = cv2.GaussianBlur(self.image[:,:,:],(5,5),0)
+        ret3,th2 = cv2.threshold(blur,90,255,cv2.THRESH_BINARY)
+        return th2
 
 
 
