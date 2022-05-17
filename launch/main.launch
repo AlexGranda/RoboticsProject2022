@@ -1,7 +1,7 @@
 <launch>
 
   <arg name="name" default="" description="a name used as ROS namespace"/>
-  <arg name="model" default="ep"/>
+  <arg name="model" default="s1"/>
   <arg name="with_model_description" default="true"/>
   <arg name="serial_number" default=""/>
   <arg name="conn_type" default="sta"/>
