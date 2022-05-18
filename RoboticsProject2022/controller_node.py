@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 import tf_transformations
 import cv2, math, time
+import numpy as np
 from cv_bridge import CvBridge
 
 from geometry_msgs.msg import Twist, Pose
@@ -51,7 +52,8 @@ class ControllerNode(Node):
 
     def camera_callback(self, msg):
         self.image = self.br.imgmsg_to_cv2(msg)
-        cv2.imshow('image',self.process_image())
+        cv2.imshow('image',self.process_image()[0])
+        cv2.imshow('image2',self.process_image()[1])
         #current_frame = self.br.imgmsg_to_cv2(msg)
         #cv2.imshow("camera", current_frame)
         cv2.waitKey(1)
@@ -101,11 +103,51 @@ class ControllerNode(Node):
         # Publish the command
         self.vel_publisher.publish(cmd_vel)
 
-    def process_image(self):
+    def find_edges(self,img_thresh):
+        G_x = cv2.Sobel(img_thresh,cv2.CV_64F,0,1)
+        G_y = cv2.Sobel(img_thresh,cv2.CV_64F,1,0)
+        G = np.abs(G_x) + np.abs(G_y)
+        G = np.sqrt(np.power(G_x,2)+np.power(G_y,2))
+        G[G >255] = 255
+        edges=G.astype( 'uint8')
 
-        blur = cv2.GaussianBlur(self.image[:,:,:],(5,5),0)
-        ret3,th2 = cv2.threshold(blur,90,255,cv2.THRESH_BINARY)
-        return th2
+        return edges
+
+    def process_image(self):
+        lines=None
+        cv2.imwrite('saved_image.jpg', self.image[:,:,:])
+        image_ret=self.image[:,:,:]
+        blur = cv2.GaussianBlur(image_ret,(5,5),0)
+        ret3,th2 = cv2.threshold(blur,90,255,cv2.THRESH_BINARY_INV)
+        edges = self.find_edges(th2)
+        edges= cv2.cvtColor(edges, cv2.COLOR_BGR2GRAY)
+        lines = cv2.HoughLines(edges, 1, np.pi/180, 50)
+        cv2.imwrite('edges.jpg', edges)
+
+        all_lines = []
+        if len(lines) !=0:
+            for line in lines:
+
+                rho, theta = line[0][0], line[0][1]
+                #print(rho,theta)
+                a = np.cos(theta)
+                b = np.sin(theta)
+
+                x0 = a*rho
+                y0 = b*rho
+                x1 = int(x0 + 4000*(-b))
+                y1 = int(y0 + 4000*(a))
+                x2 = int(x0 - 4000*(-b))
+                y2 = int(y0 - 4000*(a))
+
+                all_lines.append([x1, x2, y1, y2])
+            
+            for line in all_lines:
+                #pass
+                #if line != None:  
+                image_ret = cv2.line(image_ret,(line[0],line[2]), (line[1],line[3]), (0, 0, 255), 1)
+
+        return image_ret,th2,edges
 
 
 
