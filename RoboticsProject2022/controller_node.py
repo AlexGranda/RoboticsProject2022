@@ -4,6 +4,7 @@ import tf_transformations
 import cv2, math, time
 import numpy as np
 from cv_bridge import CvBridge
+from math import atan2
 
 from geometry_msgs.msg import Twist, Pose
 from nav_msgs.msg import Odometry
@@ -22,6 +23,9 @@ class ControllerNode(Node):
         # Create attributes to store odometry pose and velocity
         self.odom_pose = None
         self.odom_velocity = None
+        
+        #homography of robots
+        self.h=self.compute_homography()
 
         # Create a publisher for the topic 'cmd_vel'
         self.vel_publisher = self.create_publisher(Twist, 'cmd_vel', 10)
@@ -31,8 +35,6 @@ class ControllerNode(Node):
         self.odom_subscriber = self.create_subscription(Odometry, 'odom', self.odom_callback, 10)
         #self.camera_subscriber = self.create_subscription(Image,'/RM0001/camera/image_raw',self.camera_callback,10)
         self.camera_subscriber = self.create_subscription(Image,'/RM0/camera/image_raw',self.camera_callback,qos_profile_sensor_data)
-        self.camera_subscriber
-
         self.linear  = 0.0 # [m/s]
         self.angular = 0.0 # [rad/s]
 
@@ -52,12 +54,34 @@ class ControllerNode(Node):
 
     def camera_callback(self, msg):
         self.image = self.br.imgmsg_to_cv2(msg)
-        cv2.imshow('image',self.process_image()[0])
-        cv2.imshow('image2',self.process_image()[1])
-        #current_frame = self.br.imgmsg_to_cv2(msg)
-        #cv2.imshow("camera", current_frame)
-        cv2.waitKey(1)
+        processe_f = self.compute_houghlines()
 
+        #cv2.waitKey(1)
+
+        #hsv = cv2.cvtColor(processe_f[3], cv2.COLOR_BGR2HSV)
+        #lower_white = numpy.array([ 200, 200, 200])
+        #upper_white = numpy.array([255, 255, 255])
+        #mask = cv2.inRange(hsv, lower_white, upper_white)
+        h, w, d = processe_f[0].shape
+        #search_top = 3*h/4
+        #search_bot = 3*h/4 + 20
+        #mask[0:search_top, 0:w] = 0
+        #mask[search_bot:h, 0:w] = 0
+
+        M = cv2.moments(cv2.cvtColor(processe_f[2], cv2.COLOR_BGR2GRAY))
+        if M['m00'] > 0:
+                cx = int(M['m10']/M['m00'])
+                cy = int(M['m01']/M['m00'])
+                cv2.circle(processe_f[2], (cx, cy), 10, (0,0,255), -1)
+                #The proportional controller is implemented in the following four lines which
+                #is reposible of linear scaling of an error to drive the control output.
+                err = cx - w/2
+                #self.twist.linear.x = 0.2
+                self.angular = -float(err) / 100
+        
+        cv2.imshow('image2',processe_f[1])
+        cv2.imshow('image3',processe_f[2])
+        cv2.imshow('image4',processe_f[3])
 
 
         #self.get_logger().info(f"od={self.image})")
@@ -71,7 +95,7 @@ class ControllerNode(Node):
         pose2d = self.pose3d_to_2d(self.odom_pose)
 
         self.get_logger().info(
-            "odometry: received pose (x: {:.2f}, y: {:.2f}, theta: {:.2f})".format(*pose2d),
+            "odometry: received pose (uuuuux: {:.2f}, y: {:.2f}, theta: {:.2f})".format(*pose2d),
              throttle_duration_sec=0.5 # Throttle logging frequency to max 2Hz
         )
 
@@ -97,6 +121,7 @@ class ControllerNode(Node):
         # Let's just set some hard-coded velocities in this example
 
         cmd_vel = Twist()
+        self.linear=0.25
         cmd_vel.linear.x  = self.linear
         cmd_vel.angular.z = self.angular
 
@@ -113,41 +138,75 @@ class ControllerNode(Node):
 
         return edges
 
-    def process_image(self):
-        lines=None
-        cv2.imwrite('saved_image.jpg', self.image[:,:,:])
-        image_ret=self.image[:,:,:]
-        blur = cv2.GaussianBlur(image_ret,(5,5),0)
-        ret3,th2 = cv2.threshold(blur,90,255,cv2.THRESH_BINARY_INV)
-        edges = self.find_edges(th2)
-        edges= cv2.cvtColor(edges, cv2.COLOR_BGR2GRAY)
-        lines = cv2.HoughLines(edges, 1, np.pi/180, 50)
-        cv2.imwrite('edges.jpg', edges)
+    
+    def compute_homography(self):
+        pts_src=np.array(([[338,	257],[233	,257], [352 ,	288],[180	,288] ]))
+        pts_dst =np.array(([[338 ,	257] , [276	,257], [338	, 319], [276,	319]]))
+        h, status = cv2.findHomography( pts_src,pts_dst)
 
+        return h
+    
+    def compute_houghlines(self):
+
+        image=self.image
+        im_dst = cv2.warpPerspective(image, self.h, (640,360))
+        image_re = im_dst[290:341,295:351]
+        
+        #Applying Gaussian Blur Before Thresholding
+        #Since we know that the surface of the board is green we will only retain the green color channel to obtain better results
+        blur = cv2.GaussianBlur(image_re[:,:,:],(5,5),0)
+
+        #Applying Thresholding
+        ret3,th2 = cv2.threshold(blur,90,255,cv2.THRESH_BINARY_INV)
+
+        #Finding the edges of the boards
+        edges=self.find_edges(th2)
+
+        edges= cv2.cvtColor(edges, cv2.COLOR_BGR2GRAY)
+        #Finding the HoughLines from our threshold image
+        lines = cv2.HoughLines(edges, 1, np.pi/180, 50)
+  
+        #print(np.shape(lines))
+        
+        #Hough lines returns the polar coordinates of line we will transform them to cartesian
+        #The following part comes from the CV2 documentation
+        #https://opencv24-python-tutorials.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_houghlines/py_houghlines.html
         all_lines = []
-        if len(lines) !=0:
+        if lines is not None:
+            #print(np.size(lines))
+            x = y = 0
             for line in lines:
 
-                rho, theta = line[0][0], line[0][1]
-                #print(rho,theta)
-                a = np.cos(theta)
-                b = np.sin(theta)
 
-                x0 = a*rho
-                y0 = b*rho
-                x1 = int(x0 + 4000*(-b))
-                y1 = int(y0 + 4000*(a))
-                x2 = int(x0 - 4000*(-b))
-                y2 = int(y0 - 4000*(a))
 
-                all_lines.append([x1, x2, y1, y2])
+                        rho, theta = line[0][0], line[0][1]
+                        #print(f"rho={rho},theta ={theta}")
+                        #print(rho,theta)
+                        a = np.cos(theta)
+                        b = np.sin(theta)
+
+                        x0 = a*rho
+                        y0 = b*rho
+                        x1 = int(x0 + 4000*(-b))
+                        y1 = int(y0 + 4000*(a))
+                        x2 = int(x0 - 4000*(-b))
+                        y2 = int(y0 - 4000*(a))
+
+                        all_lines.append([x1, x2, y1, y2])
+                        x+=a
+                        y+=b
             
+            average_angle = atan2(y, x)
+            print(lines)
+            self.get_logger().info(f"average_angle:{average_angle}")
+            
+                    
             for line in all_lines:
-                #pass
-                #if line != None:  
-                image_ret = cv2.line(image_ret,(line[0],line[2]), (line[1],line[3]), (0, 0, 255), 1)
+                    image_re = cv2.line(image_re,(line[0],line[2]), (line[1],line[3]), (0, 0, 255), 1)
 
-        return image_ret,th2,edges
+        return image_re ,blur,th2,edges,all_lines
+
+
 
 
 

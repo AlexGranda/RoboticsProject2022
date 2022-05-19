@@ -20,7 +20,7 @@ def main(args: Any = None) -> None:
     executor = rclpy.executors.MultiThreadedExecutor()
     node = RoboMasterROS(executor=executor)
     ep_chassis = node.ep_robot.chassis
-    ep_chassis.move(x=2, y=0, z=0, xy_speed=0.7).wait_for_completed()
+    #ep_chassis.move(x=2, y=0, z=0, xy_speed=0.7).wait_for_completed()
     time.sleep(3)
     if not node.disconnection.done():
         try:
