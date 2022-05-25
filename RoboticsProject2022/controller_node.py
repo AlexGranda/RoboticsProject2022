@@ -5,11 +5,13 @@ import cv2, math, time
 import numpy as np
 from cv_bridge import CvBridge
 from math import atan2
+import os
 
 from geometry_msgs.msg import Twist, Pose
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image
 from rclpy.qos import qos_profile_sensor_data
+
 
 
 import sys
@@ -23,9 +25,11 @@ class ControllerNode(Node):
         # Create attributes to store odometry pose and velocity
         self.odom_pose = None
         self.odom_velocity = None
+        self.path =  os.getcwd()
         
         #homography of robots
         self.h=self.compute_homography()
+        self.c_fps=0
 
         # Create a publisher for the topic 'cmd_vel'
         self.vel_publisher = self.create_publisher(Twist, 'cmd_vel', 10)
@@ -34,7 +38,8 @@ class ControllerNode(Node):
         # self.odom_callback every time a message is received
         self.odom_subscriber = self.create_subscription(Odometry, 'odom', self.odom_callback, 10)
         #self.camera_subscriber = self.create_subscription(Image,'/RM0001/camera/image_raw',self.camera_callback,10)
-        self.camera_subscriber = self.create_subscription(Image,'/RM0/camera/image_raw',self.camera_callback,qos_profile_sensor_data)
+        #self.camera_subscriber = self.create_subscription(Image,'/RM0/camera/image_raw',self.camera_callback,qos_profile_sensor_data)
+        self.camera_subscriber = self.create_subscription(Image,'/RM0/camera/image_raw',self.camera_callback,10)
         self.linear  = 0.0 # [m/s]
         self.angular = 0.0 # [rad/s]
 
@@ -56,32 +61,62 @@ class ControllerNode(Node):
         self.image = self.br.imgmsg_to_cv2(msg)
         processe_f = self.compute_houghlines()
 
-        #cv2.waitKey(1)
 
+        #
+        angle=0
         #hsv = cv2.cvtColor(processe_f[3], cv2.COLOR_BGR2HSV)
         #lower_white = numpy.array([ 200, 200, 200])
         #upper_white = numpy.array([255, 255, 255])
         #mask = cv2.inRange(hsv, lower_white, upper_white)
         h, w, d = processe_f[0].shape
-        #search_top = 3*h/4
-        #search_bot = 3*h/4 + 20
-        #mask[0:search_top, 0:w] = 0
-        #mask[search_bot:h, 0:w] = 0
+        mask=cv2.cvtColor(processe_f[2],cv2.COLOR_BGR2GRAY)
+        search_top = int(round(3*h/4,0))
+        #print(search_top)
+        search_bot = int(round(3*h/4,0)) +15
+        #print(search_bot)
+        mask[0:search_top, 0:w] = 0
 
-        M = cv2.moments(cv2.cvtColor(processe_f[2], cv2.COLOR_BGR2GRAY))
+        M = cv2.moments(mask)
+        err=0
         if M['m00'] > 0:
                 cx = int(M['m10']/M['m00'])
                 cy = int(M['m01']/M['m00'])
-                cv2.circle(processe_f[2], (cx, cy), 10, (0,0,255), -1)
+                cv2.circle(processe_f[0], (cx, cy), 10, (0,0,255), -1)
                 #The proportional controller is implemented in the following four lines which
                 #is reposible of linear scaling of an error to drive the control output.
                 err = cx - w/2
+                if err <0:
+                    err= -(err**2)
+                else:
+                    err=err**2
                 #self.twist.linear.x = 0.2
-                self.angular = -float(err) / 100
-        
-        cv2.imshow('image2',processe_f[1])
-        cv2.imshow('image3',processe_f[2])
-        cv2.imshow('image4',processe_f[3])
+
+        #self.get_logger().info(f"float {-(float(err) / 100)*2} , average_angle_vel:{processe_f[4]} ,samp= {(processe_f[4]/15)}")
+
+        #self.angular = -float(processe_f[4]/(math.pi*6))
+        angle = float(processe_f[5])
+
+        #check if curve is pronounced
+        if processe_f[4] > math.pi:
+            angle=abs(processe_f[4]-math.pi)
+            
+        #self.angular =-processe_f[5]/15 #/math.pi/15*angle
+        #self.linear = 1*abs(angle-math.pi)/math.pi
+
+
+
+        self.angular=-(float(err) / 10000)*3
+        self.linear = 0.1#.25
+        t=cv2.imwrite(os.path.join(self.path ,'src/RoboticsProject2022/video',"image_"+str(self.c_fps)+".png"), processe_f[0])
+        #t=cv2.imwrite('src\RoboticsProject2022\video'+str(self.c_fps)+'.png',processe_f[0])
+        #self.get_logger().info(f"{self.path} ,wrtie {t}")
+        #cv2.imwrite(os.path.join(self.path , "image_"+str(self.c_fps)), processe_f[0])
+        #cv2.imshow('image1',self.image)
+        cv2.imshow('image2',processe_f[0])
+        #cv2.imshow('image3',processe_f[2])
+        #cv2.imshow('image4',processe_f[3])
+        cv2.waitKey(1)
+        self.c_fps+=1
 
 
         #self.get_logger().info(f"od={self.image})")
@@ -121,7 +156,7 @@ class ControllerNode(Node):
         # Let's just set some hard-coded velocities in this example
 
         cmd_vel = Twist()
-        self.linear=0.25
+        #self.linear=0.25
         cmd_vel.linear.x  = self.linear
         cmd_vel.angular.z = self.angular
 
@@ -165,6 +200,10 @@ class ControllerNode(Node):
         edges= cv2.cvtColor(edges, cv2.COLOR_BGR2GRAY)
         #Finding the HoughLines from our threshold image
         lines = cv2.HoughLines(edges, 1, np.pi/180, 50)
+
+        if lines is None :
+            lines = cv2.HoughLines(edges, 1, np.pi/180, 25)
+
   
         #print(np.shape(lines))
         
@@ -172,10 +211,15 @@ class ControllerNode(Node):
         #The following part comes from the CV2 documentation
         #https://opencv24-python-tutorials.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_houghlines/py_houghlines.html
         all_lines = []
+        average_angle=self.angular
+        r_angle=0
+        l_found=False
         if lines is not None:
+            l_found =True
             #print(np.size(lines))
             x = y = 0
             for line in lines:
+
 
 
 
@@ -195,16 +239,23 @@ class ControllerNode(Node):
                         all_lines.append([x1, x2, y1, y2])
                         x+=a
                         y+=b
+
+            s=np.shape(lines)
+            average_angle = round(atan2( x/s[0],y/s[0]),2)
+            r_angle = round(atan2(a, b),2)
+            #print(f"atan2{atan2(b, a)}")
+            #print(lines)
+            self.get_logger().info(f"shape:{lines}")
             
-            average_angle = atan2(y, x)
-            print(lines)
-            self.get_logger().info(f"average_angle:{average_angle}")
             
-                    
+
             for line in all_lines:
                     image_re = cv2.line(image_re,(line[0],line[2]), (line[1],line[3]), (0, 0, 255), 1)
+            
+            cv2.putText(image_re, text="a: "+str(average_angle),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            cv2.putText(image_re, text="r: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
 
-        return image_re ,blur,th2,edges,all_lines
+        return image_re ,blur,th2,edges,average_angle,r_angle,l_found
 
 
 
