@@ -11,6 +11,7 @@ from geometry_msgs.msg import Twist, Pose
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image
 from rclpy.qos import qos_profile_sensor_data
+from scipy import ndimage
 
 
 
@@ -26,6 +27,11 @@ class ControllerNode(Node):
         self.odom_pose = None
         self.odom_velocity = None
         self.path =  os.getcwd()
+        self.probahough=True
+
+        #For the array of positions
+        self.future_pos=None
+        self.past_pos=None
         
         #homography of robots
         self.h=self.compute_homography()
@@ -58,68 +64,114 @@ class ControllerNode(Node):
         self.vel_publisher.publish(cmd_vel)
 
     def camera_callback(self, msg):
+        self.get_logger().info(f"od={self.c_fps})")
         self.image = self.br.imgmsg_to_cv2(msg)
-        processe_f = self.compute_houghlines()
+        #processe_f = self.compute_houghlines()
+        processe_f = self.compute_houghlinesP()
+
+        
 
 
-        #
-        angle=0
-        #hsv = cv2.cvtColor(processe_f[3], cv2.COLOR_BGR2HSV)
-        #lower_white = numpy.array([ 200, 200, 200])
-        #upper_white = numpy.array([255, 255, 255])
-        #mask = cv2.inRange(hsv, lower_white, upper_white)
+
         h, w, d = processe_f[0].shape
         mask=cv2.cvtColor(processe_f[2],cv2.COLOR_BGR2GRAY)
         search_top = int(round(3*h/4,0))
         #print(search_top)
         search_bot = int(round(3*h/4,0)) +15
-        #print(search_bot)
+        
         mask[0:search_top, 0:w] = 0
-
+        #Computes the middle point the red
+        #this part computes the center of the lower part of the image
         M = cv2.moments(mask)
         err=0
+        cx=None
+        cy=None
         if M['m00'] > 0:
-                cx = int(M['m10']/M['m00'])
-                cy = int(M['m01']/M['m00'])
-                cv2.circle(processe_f[0], (cx, cy), 10, (0,0,255), -1)
-                #The proportional controller is implemented in the following four lines which
-                #is reposible of linear scaling of an error to drive the control output.
-                err = cx - w/2
-                if err <0:
-                    err= -(err**2)
-                else:
-                    err=err**2
-                #self.twist.linear.x = 0.2
-
-        #self.get_logger().info(f"float {-(float(err) / 100)*2} , average_angle_vel:{processe_f[4]} ,samp= {(processe_f[4]/15)}")
-
-        #self.angular = -float(processe_f[4]/(math.pi*6))
-        angle = float(processe_f[5])
-
-        #check if curve is pronounced
-        if processe_f[4] > math.pi:
-            angle=abs(processe_f[4]-math.pi)
+            cx = int(M['m10']/M['m00'])
+            cy = int(M['m01']/M['m00'])
             
-        #self.angular =-processe_f[5]/15 #/math.pi/15*angle
-        #self.linear = 1*abs(angle-math.pi)/math.pi
+            cv2.circle(processe_f[0], (cx, cy), 10, (0,0,255), -1)
+            
+            #The proportional controller is implemented in the following four lines which
+            #is reposible of linear scaling of an error to drive the control output.
+            err = cx - w/2
+            if err <0:
+                err= -(err**2)
+            else:
+                err=err**2
+            #self.twist.linear.x = 0.2
+        
+        anglecirc=anglecirc2=0
+        angle=self.angle_turn(processe_f[4])
 
 
 
+
+        #Follow lines with houghcircle adjustement
+        #if circles is not None
+        if processe_f[8] is not None and cx !=None and cy!=None :
+            #self.get_logger().info(f"CIRC: {processe_f[8][0][0]}")
+            circ=processe_f[8][0][0]
+            anglecirc=round(math.atan2(circ[0]-cx, circ[1]-cy),2)
+            self.get_logger().info(f"CIRC: {circ[0]},{circ[1]}, point {cx},{cy} ")
+            #cv2.line(processe_f[0],(int(circ[0]) ,int(circ[1])), (int(cx),int(cy)), (255, 255, 255), 2)
+            anglecirc2=self.angle_turn(anglecirc)
+            self.angular=-float(anglecirc2)/math.pi
+        else : 
+
+            #If circule not found line  with houghlines
+            self.angular = float(angle/math.pi)
+
+            #If circule not found line   follow line with middle point
+            #self.angular=-(float(err) / 10000)*3
+
+
+        #comment both angular velocities if you want to take in to account the circle center
+        #follow line with middle point
+        #self.angular = float(angle/math.pi)
+
+        #follow line with middle point
         self.angular=-(float(err) / 10000)*3
-        self.linear = 0.1#.25
+
+        self.get_logger().info(f"float: {-(float(err) / 10000)*3} , average_angle_vel:{ -float(angle/math.pi)} ,tunr= {angle}")
+        self.get_logger().info(f"circle_angle: {anglecirc2} , circ_vel:{ float(anglecirc2)/math.pi} ")
+
+        self.linear = .25 
+        
+        #Saves images of the robot camera
         t=cv2.imwrite(os.path.join(self.path ,'src/RoboticsProject2022/video',"image_"+str(self.c_fps)+".png"), processe_f[0])
-        #t=cv2.imwrite('src\RoboticsProject2022\video'+str(self.c_fps)+'.png',processe_f[0])
-        #self.get_logger().info(f"{self.path} ,wrtie {t}")
-        #cv2.imwrite(os.path.join(self.path , "image_"+str(self.c_fps)), processe_f[0])
+        j=cv2.imwrite(os.path.join(self.path ,'src/RoboticsProject2022/video/testing',"image_"+str(self.c_fps)+".png"), processe_f[7])
+        #self.get_logger().info(xf"{self.path} ,wrtie {t}")
+
+
+        #images in real time
+
+        image3=np.zeros_like(processe_f[1])
+        image3[:, :,0]=processe_f[3]
+        image3[:, :,1]=processe_f[3]
+        image3[:, :,2]=processe_f[3]
+        
+        horizontal = np.concatenate((processe_f[0],processe_f[2],image3), axis=1)
+        cv2.imshow('Processed images',horizontal)
+        
         #cv2.imshow('image1',self.image)
-        cv2.imshow('image2',processe_f[0])
+        #cv2.imshow('image2',processe_f[0])
         #cv2.imshow('image3',processe_f[2])
         #cv2.imshow('image4',processe_f[3])
         cv2.waitKey(1)
-        self.c_fps+=1
+        
+        
+        self.c_fps+=1 #number of frames processed 
+        self.past_pos= self.future_pos
+        self.future_pos=self.masking_steps(processe_f[2],h,w,5)
+
+        self.get_logger().info(f"future: {self.future_pos} ")
+        self.get_logger().info(f"past: {self.past_pos} ")
 
 
-        #self.get_logger().info(f"od={self.image})")
+
+
+        
 
 
 
@@ -129,10 +181,38 @@ class ControllerNode(Node):
 
         pose2d = self.pose3d_to_2d(self.odom_pose)
 
-        self.get_logger().info(
-            "odometry: received pose (uuuuux: {:.2f}, y: {:.2f}, theta: {:.2f})".format(*pose2d),
-             throttle_duration_sec=0.5 # Throttle logging frequency to max 2Hz
-        )
+        #self.get_logger().info(
+        #    "odometry: received pose (uuuuux: {:.2f}, y: {:.2f}, theta: {:.2f})".format(*pose2d),
+        #     throttle_duration_sec=0.5 # Throttle logging frequency to max 2Hz
+        #)
+
+    
+    
+    
+    def masking_steps(self,A,h,w,size):
+
+        #This creates an list of the centers of image sections
+
+        future_pos=[None]*int(h/size)
+
+        for i in range(0, int(h/size)):
+            
+            mask_range_bot=(i)*size
+            mask_range_top=(i+1)*size
+            mask=cv2.cvtColor(A,cv2.COLOR_BGR2GRAY)
+            mask[0:mask_range_bot, 0:w] = 0
+            mask[mask_range_top:h, 0:w]=0
+
+            M = cv2.moments(mask)
+            err=0
+            if M['m00'] > 0:
+                    cx = int(M['m10']/M['m00'])
+                    cy = int(M['m01']/M['m00'])
+                    future_pos[i]=[cx,cy]
+                    #cv2.circle(mask, (cx, cy), 10, (255,255,255), -1)
+        
+        return future_pos
+
 
     def pose3d_to_2d(self, pose3):
         quaternion = (
@@ -151,6 +231,7 @@ class ControllerNode(Node):
         )
 
         return pose2
+    
 
     def update_callback(self):
         # Let's just set some hard-coded velocities in this example
@@ -172,6 +253,7 @@ class ControllerNode(Node):
         edges=G.astype( 'uint8')
 
         return edges
+    
 
     
     def compute_homography(self):
@@ -180,9 +262,9 @@ class ControllerNode(Node):
         h, status = cv2.findHomography( pts_src,pts_dst)
 
         return h
-    
-    def compute_houghlines(self):
 
+    def apply_transformation(self):
+        
         image=self.image
         im_dst = cv2.warpPerspective(image, self.h, (640,360))
         image_re = im_dst[290:341,295:351]
@@ -198,31 +280,55 @@ class ControllerNode(Node):
         edges=self.find_edges(th2)
 
         edges= cv2.cvtColor(edges, cv2.COLOR_BGR2GRAY)
+
+        return image_re,blur,th2,edges
+    
+    def angle_turn(self, angle):
+
+        #Adjustement for the angle since the angle returned by the HoughlinesP goes from pi/2 to pi for right turns
+        #and  0 to pi/2 for left turns
+
+        ang_ret=0
+
+        #left turn
+        if angle>=0 and angle<(math.pi/2) :
+            
+            ang_ret= angle
+        
+        #right turn
+        else :
+            
+            ang_ret= angle-(math.pi)
+
+        if abs(ang_ret)>.26:
+           return ang_ret
+        else: return 0
+    
+    def compute_houghlines(self):
+
+        all_lines = []
+        average_angle=0.0
+        average_angle=self.angular
+        r_angle=a=b=0.0
+        l_found=False
+        canvas = np.zeros((80,80))
+
+        image_re,blur,th2,edges= self.apply_transformation()
+
         #Finding the HoughLines from our threshold image
         lines = cv2.HoughLines(edges, 1, np.pi/180, 50)
-
         if lines is None :
             lines = cv2.HoughLines(edges, 1, np.pi/180, 25)
-
-  
         #print(np.shape(lines))
         
         #Hough lines returns the polar coordinates of line we will transform them to cartesian
         #The following part comes from the CV2 documentation
         #https://opencv24-python-tutorials.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_houghlines/py_houghlines.html
-        all_lines = []
-        average_angle=self.angular
-        r_angle=0
-        l_found=False
         if lines is not None:
             l_found =True
             #print(np.size(lines))
-            x = y = 0
+            x = y = 0.0
             for line in lines:
-
-
-
-
                         rho, theta = line[0][0], line[0][1]
                         #print(f"rho={rho},theta ={theta}")
                         #print(rho,theta)
@@ -231,31 +337,92 @@ class ControllerNode(Node):
 
                         x0 = a*rho
                         y0 = b*rho
-                        x1 = int(x0 + 4000*(-b))
-                        y1 = int(y0 + 4000*(a))
-                        x2 = int(x0 - 4000*(-b))
-                        y2 = int(y0 - 4000*(a))
+                        x1 = int(x0 + 90*(-b))
+                        y1 = int(y0 + 90*(a))
+                        x2 = int(x0 - 90*(-b))
+                        y2 = int(y0 - 90*(a))
 
                         all_lines.append([x1, x2, y1, y2])
                         x+=a
                         y+=b
 
             s=np.shape(lines)
-            average_angle = round(atan2( x/s[0],y/s[0]),2)
-            r_angle = round(atan2(a, b),2)
-            #print(f"atan2{atan2(b, a)}")
-            #print(lines)
-            self.get_logger().info(f"shape:{lines}")
+            average_angle = round(atan2(y/s[0],x/s[0]),2)
+            r_angle = round(atan2(b, a),2)
             
-            
-
             for line in all_lines:
-                    image_re = cv2.line(image_re,(line[0],line[2]), (line[1],line[3]), (0, 0, 255), 1)
+                image_re = cv2.line(image_re,(line[0],line[2]), (line[1],line[3]), (0, 0, 255), 2)
+                canvas = cv2.line(canvas,(line[0],line[2]), (line[1],line[3]), (255, 255, 255), 2)
             
             cv2.putText(image_re, text="a: "+str(average_angle),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
             cv2.putText(image_re, text="r: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
 
-        return image_re ,blur,th2,edges,average_angle,r_angle,l_found
+            cv2.putText(canvas, text="a: "+str(average_angle),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            cv2.putText(canvas, text="r: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+
+        return image_re ,blur,th2,edges,average_angle,r_angle,l_found,canvas
+
+
+        
+    def compute_houghlinesP(self):
+
+        all_lines = []
+        average_angle=0.0
+        #average_angle=self.angular
+        r_angle=a=b=0.0
+        l_found=False
+        circles = None
+        canvas = np.zeros((80,80))
+
+        image_re,blur,th2,edges= self.apply_transformation()
+
+        #Finding the HoughLines from our threshold image
+        lines = cv2.HoughLinesP(edges, 1, np.pi/180, 50,3,20)
+        if lines is None :
+            lines = cv2.HoughLinesP(edges, 1, np.pi/180, 25,3,20)
+        #print(np.shape(lines))
+        
+        #Hough lines returns the polar coordinates of line we will transform them to cartesian
+        #The following part comes from the CV2 documentation
+        #https://opencv24-python-tutorials.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_houghlines/py_houghlines.html
+        all_lines = []
+        if lines is not None:
+            for line in lines:
+
+                for x1,y1,x2,y2 in line:
+                    cv2.line(image_re,(x1,y1),(x2,y2),(0,255,0),2)
+                    cv2.line(canvas,(x1,y1),(x2,y2),(255,255,255),2)
+                    a+=x2-x1
+                    b+=y2-y1
+
+                    r_angle = round(atan2(x2-x1,y2-y1),2)
+                        
+                        
+            s=np.shape(lines)
+            average_angle = round(atan2(a/s[0],b/s[0]),2)
+            
+            
+
+            cv2.putText(image_re, text="a: "+str(average_angle),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            cv2.putText(image_re, text="r: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+
+            cv2.putText(canvas, text="a: "+str(average_angle),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            cv2.putText(canvas, text="r: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(200,250,240), thickness=1)
+        
+        circles = cv2.HoughCircles(edges,cv2.HOUGH_GRADIENT,1,20,param1=50,param2=15,minRadius=5,maxRadius=30)
+
+        
+        #if circles is not None:
+        #    for i in circles[0,:]:
+        #        # draw the outer circle
+        #        cv2.circle(image_re,(int(i[0]),int(i[1])),int(i[2]),(255,255,255),2)
+        #        #draw the center of the circle
+        #        cv2.circle(image_re,(int(i[0]),int(i[1])),2,(255,255,255),3)
+
+
+
+        return image_re ,blur,th2,edges,average_angle,r_angle,l_found,canvas,circles
+        
 
 
 
