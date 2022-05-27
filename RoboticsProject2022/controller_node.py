@@ -68,12 +68,13 @@ class ControllerNode(Node):
         self.image = self.br.imgmsg_to_cv2(msg)
         #processe_f = self.compute_houghlines()
         processe_f = self.compute_houghlinesP()
+        h, w, d = processe_f[0].shape
+
+        self.c_fps+=1 #number of frames processed 
+        self.past_pos= self.future_pos
+        self.future_pos=self.masking_steps(processe_f[2],h,w,5)
 
         
-
-
-
-        h, w, d = processe_f[0].shape
         mask=cv2.cvtColor(processe_f[2],cv2.COLOR_BGR2GRAY)
         search_top = int(round(3*h/4,0))
         #print(search_top)
@@ -84,11 +85,12 @@ class ControllerNode(Node):
         #this part computes the center of the lower part of the image
         M = cv2.moments(mask)
         err=0
-        cx=None
-        cy=None
+        current_center = self.future_pos.pop(0)
+        cx=current_center[0]
+        cy=current_center[1]
         if M['m00'] > 0:
-            cx = int(M['m10']/M['m00'])
-            cy = int(M['m01']/M['m00'])
+            # cx = int(M['m10']/M['m00'])
+            # cy = int(M['m01']/M['m00'])
             
             cv2.circle(processe_f[0], (cx, cy), 10, (0,0,255), -1)
             
@@ -154,24 +156,10 @@ class ControllerNode(Node):
         horizontal = np.concatenate((processe_f[0],processe_f[2],image3), axis=1)
         cv2.imshow('Processed images',horizontal)
         
-        #cv2.imshow('image1',self.image)
-        #cv2.imshow('image2',processe_f[0])
-        #cv2.imshow('image3',processe_f[2])
-        #cv2.imshow('image4',processe_f[3])
         cv2.waitKey(1)
-        
-        
-        self.c_fps+=1 #number of frames processed 
-        self.past_pos= self.future_pos
-        self.future_pos=self.masking_steps(processe_f[2],h,w,5)
 
         self.get_logger().info(f"future: {self.future_pos} ")
-        self.get_logger().info(f"past: {self.past_pos} ")
-
-
-
-
-        
+        self.get_logger().info(f"past: {self.past_pos} ")  
 
 
 
@@ -193,7 +181,8 @@ class ControllerNode(Node):
 
         #This creates an list of the centers of image sections
 
-        future_pos=[None]*int(h/size)
+        # future_pos=[None]*int(h/size)
+        future_pos = []
 
         for i in range(0, int(h/size)):
             
@@ -208,7 +197,8 @@ class ControllerNode(Node):
             if M['m00'] > 0:
                     cx = int(M['m10']/M['m00'])
                     cy = int(M['m01']/M['m00'])
-                    future_pos[i]=[cx,cy]
+                    # future_pos[i]=[cx,cy]
+                    future_pos.append([cx,cy])
                     #cv2.circle(mask, (cx, cy), 10, (255,255,255), -1)
         
         return future_pos
