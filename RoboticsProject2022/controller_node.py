@@ -70,9 +70,13 @@ class ControllerNode(Node):
         processe_f = self.compute_houghlinesP()
         h, w, d = processe_f[0].shape
 
-        self.c_fps+=1 #number of frames processed 
+        self.c_fps+=1 #number of frames processed
         self.past_pos= self.future_pos
         self.future_pos=self.masking_steps(processe_f[2],h,w,5)
+
+        if self.past_pos is not None:
+            averages = np.mean( np.array([ self.past_pos, self.future_pos ]), axis=0 )
+            self.get_logger().info(f'Averages from positions: {averages}')
 
         
         mask=cv2.cvtColor(processe_f[2],cv2.COLOR_BGR2GRAY)
