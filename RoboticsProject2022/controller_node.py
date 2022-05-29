@@ -71,11 +71,22 @@ class ControllerNode(Node):
         h, w, d = processe_f[0].shape
 
         self.c_fps+=1 #number of frames processed
-        self.past_pos= self.future_pos
-        self.future_pos=self.masking_steps(processe_f[2],h,w,5)
+        self.past_pos = np.copy(self.future_pos)
+        self.future_pos = self.masking_steps(processe_f[2],h,w,5)
+        future_copy = self.future_pos.copy()
+        future_copy = np.array(future_copy)
+        averages = np.copy(self.future_pos)
 
-        if self.past_pos is not None:
-            averages = np.mean( np.array([ self.past_pos, self.future_pos ]), axis=0 )
+        if self.past_pos.any() and future_copy.any():
+            self.get_logger().info(f'Past positions: {self.past_pos}')
+            self.get_logger().info(f'Future positions: {future_copy}')
+            arr = np.ma.empty((12, 2, 2))
+            arr.mask = True
+            arr[:self.past_pos.shape[0], :self.past_pos.shape[1] , 0] = self.past_pos
+            arr[:future_copy.shape[0], :future_copy.shape[1], 1] = future_copy
+            # averages = np.mean( np.array([ self.past_pos, future_copy ]), axis=0 )
+            averages = arr.mean(axis = 2)
+            self.get_logger().info(f'Fancy averages from positions: {arr.mean(axis = 2)}')
             self.get_logger().info(f'Averages from positions: {averages}')
 
         
@@ -90,6 +101,7 @@ class ControllerNode(Node):
         M = cv2.moments(mask)
         err=0
         current_center = self.future_pos.pop(0)
+        self.future_pos = averages
         cx=current_center[0]
         cy=current_center[1]
         if M['m00'] > 0:
@@ -161,9 +173,6 @@ class ControllerNode(Node):
         cv2.imshow('Processed images',horizontal)
         
         cv2.waitKey(1)
-
-        self.get_logger().info(f"future: {self.future_pos} ")
-        self.get_logger().info(f"past: {self.past_pos} ")  
 
 
 
