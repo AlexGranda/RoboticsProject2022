@@ -160,7 +160,7 @@ class ControllerNode(Node):
             
             if   ((anglecirc < math.pi/2 and  processe_f[5] < math.pi/2) and abs(processe_f[5]-anglecirc)<.52) or len(self.future_pos)>6:
                 #self.angular = float(angle/(math.pi))
-                self.angular = float(angle)/2.5
+                self.angular = float(angle)/2.5-(float(err) / 10000)*6
 
                 cv2.line(processe_f[0],(int(circ[0]) ,int(circ[1])), (int(w/2),int(h)), (255, 255, 255), 2)
                 #cv2.circle(processe_f[0],(int(circ[0]),int(circ[0])),int(circ[2]),(255,255,255),2)
@@ -177,7 +177,7 @@ class ControllerNode(Node):
                 #cv2.circle(processe_f[0],(int(circ[0]),int(circ[0])),int(circ[2]),(0,255,255),2)
                 #cv2.circle(processe_f[0],(int(circ[0]),int(circ[1])),2,(0,255,255),3)   
 
-                self.angular=float(anglecirc2)*2
+                self.angular=float(anglecirc2)*1.5
                 #self.angular = float(angulo_prueba)*3
                 #self.angular=-(float(erro2) / 10000)*3
 
@@ -187,7 +187,7 @@ class ControllerNode(Node):
 
             #If circule not found line  with houghlines
             #self.angular = float(angle/(math.pi))
-            self.angular = float(angle)/2.5-(float(err) / 10000)*3
+            self.angular = float(angle)/2.5-(float(err) / 10000)*6
             #self.angular = float(angulo_prueba)*3
 
             #If circule not found line   follow line with middle point
@@ -215,8 +215,8 @@ class ControllerNode(Node):
         #f processe_f[6] ==  False:
         #    self.angular = prev_ang
         
-        if processe_f[5] < 1.8 and processe_f[5] >1.3 and cx is None:
-            self.angular=0.0
+        #if processe_f[5] < 1.8 and processe_f[5] >1.3 and cx is None:
+        #    self.angular=0.0
 
         
 
@@ -512,7 +512,7 @@ class ControllerNode(Node):
             #cv2.putText(image_re, text="r: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
 
         #circles = cv2.HoughCircles(edges,cv2.HOUGH_GRADIENT,1,20,param1=50,param2=15,minRadius=5,maxRadius=30)
-        circles = cv2.HoughCircles(edges,cv2.HOUGH_GRADIENT,1,20,param1=50,param2=10,minRadius=5,maxRadius=50)
+        circles = cv2.HoughCircles(edges,cv2.HOUGH_GRADIENT,1,20,param1=50,param2=15,minRadius=5,maxRadius=30)
 
         
         #if circles is not None:
