@@ -69,6 +69,7 @@ class ControllerNode(Node):
         #processe_f = self.compute_houghlines()
         processe_f = self.compute_houghlinesP()
         h, w, d = processe_f[0].shape
+        prev_ang=self.angular
 
         self.c_fps+=1 #number of frames processed
         self.past_pos = np.copy(self.future_pos)
@@ -100,6 +101,7 @@ class ControllerNode(Node):
         #this part computes the center of the lower part of the image
         M = cv2.moments(mask)
         err=0
+        err_=0
         #current_center = self.future_pos.pop(0)
         #self.future_pos = averages
         #cx=current_center[0]
@@ -117,6 +119,7 @@ class ControllerNode(Node):
             #The proportional controller is implemented in the following four lines which
             #is reposible of linear scaling of an error to drive the control output.
             err = cx - w/2
+            err_ = cx - w/2
             if err <0:
                 err= -(err**2)
             else:
@@ -124,6 +127,19 @@ class ControllerNode(Node):
             #self.twist.linear.x = 0.2
         anglecirc=anglecirc2=0
         angle=self.angle_turn(processe_f[5])
+        angulo_prueba=self.angular
+
+        if (self.odom_pose is not None) and processe_f[6]:
+            if processe_f[5] >= (math.pi/2):
+                angulo_prueba=round(processe_f[5]-self.pose3d_to_2d(self.odom_pose)[2]-math.pi,2)
+            else:
+                angulo_prueba=round(processe_f[5]-self.pose3d_to_2d(self.odom_pose)[2],2)
+
+        
+        
+
+
+            
 
 
 
@@ -135,18 +151,18 @@ class ControllerNode(Node):
         if processe_f[8] is not None and cx !=None and cy!=None :
             #self.get_logger().info(f"CIRC: {processe_f[8][0][0]}")
             circ=processe_f[8][0][0]
-            anglecirc=round(math.atan2(circ[0]-cx, circ[1]-cy),2)
+            anglecirc=round(math.atan2(circ[0]-w/2, circ[1]-h),2)
             self.get_logger().info(f"CIRC: {circ[0]},{circ[1]}, point {cx},{cy} ")
             if anglecirc<0:
                 anglecirc=anglecirc+math.pi
             anglecirc2=self.angle_turn(anglecirc)
             
             
-            if  False : #(anglecirc < math.pi/2 and  processe_f[4] < math.pi/2) or (anglecirc > math.pi/2 and  processe_f[4] > math.pi/2):
+            if   ((anglecirc < math.pi/2 and  processe_f[5] < math.pi/2) and abs(processe_f[5]-anglecirc)<.52) or len(self.future_pos)>7:
                 #self.angular = float(angle/(math.pi))
-                self.angular = float(angle)/math.pi
+                self.angular = float(angle)/2.5
 
-                cv2.line(processe_f[0],(int(circ[0]) ,int(circ[1])), (int(cx),int(cy)), (255, 255, 255), 2)
+                cv2.line(processe_f[0],(int(circ[0]) ,int(circ[1])), (int(w/2),int(h)), (255, 255, 255), 2)
                 #cv2.circle(processe_f[0],(int(circ[0]),int(circ[0])),int(circ[2]),(255,255,255),2)
                 #cv2.circle(processe_f[0],(int(circ[0]),int(circ[1])),2,(255,255,255),3)
 
@@ -157,11 +173,12 @@ class ControllerNode(Node):
                 else:
                     erro2=erro2**2
                 
-                cv2.line(processe_f[0],(int(circ[0]) ,int(circ[1])), (int(cx),int(cy)), (0, 255, 255), 2)
+                cv2.line(processe_f[0],(int(circ[0]) ,int(circ[1])), (int(w/2),int(h)), (0, 255, 255), 2)
                 #cv2.circle(processe_f[0],(int(circ[0]),int(circ[0])),int(circ[2]),(0,255,255),2)
                 #cv2.circle(processe_f[0],(int(circ[0]),int(circ[1])),2,(0,255,255),3)   
 
-                self.angular=float(anglecirc2)*2
+                self.angular=float(anglecirc2)*2.5
+                #self.angular = float(angulo_prueba)*3
                 #self.angular=-(float(erro2) / 10000)*3
 
 
@@ -171,6 +188,7 @@ class ControllerNode(Node):
             #If circule not found line  with houghlines
             #self.angular = float(angle/(math.pi))
             self.angular = float(angle)/2.5
+            #self.angular = float(angulo_prueba)*3
 
             #If circule not found line   follow line with middle point
             #self.angular=-(float(err) / 10000)*3
@@ -194,6 +212,15 @@ class ControllerNode(Node):
         #j=cv2.imwrite(os.path.join(self.path ,'src/RoboticsProject2022/video/testing',"image_"+str(self.c_fps)+".png"), processe_f[7])
         #self.get_logger().info(xf"{self.path} ,wrtie {t}")
 
+        if processe_f[6] ==  False:
+            self.angular = prev_ang
+        
+        if processe_f[5] < 1.8 and processe_f[5] >1.3 and cx is None:
+            self.angular=0.0
+
+        
+
+
 
         #images in real time
 
@@ -204,21 +231,34 @@ class ControllerNode(Node):
 
  
         ###IMAGE_LOGGING
+
+        cv2.putText(processe_f[7], text="avg_angle: "+str(round(processe_f[4],3)),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+        cv2.putText(processe_f[7], text="fst_angle: "+str(round(processe_f[5],3)),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(200,250,240), thickness=1)
         cv2.putText(processe_f[7], text="ang circ line: "+str(anglecirc),org=(2,30), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(200,250,240), thickness=1)
         cv2.putText(processe_f[7], text="houghline acc : "+str(round(float(angle)/2.5,3)),org=(2,40), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(200,250,240), thickness=1)
         cv2.putText(processe_f[7], text="midp acc: "+str(-round((float(err) / 10000)*3,3)),org=(2,50), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(200,250,240), thickness=1)
         cv2.putText(processe_f[7], text="circ_acc: "+str(round(float(anglecirc2)*2,3))+" r/s",org=(2,60), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
         cv2.putText(processe_f[7], text="angular_vel: "+str(round(self.angular,3))+" r/s",org=(2,70), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+        cv2.putText(processe_f[7], text="error in x axis: "+str(round(err_,3))+" r/s",org=(2,80), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+        if self.odom_pose is not None:
+            cv2.putText(processe_f[7], text="pose x: "+str(round(self.pose3d_to_2d(self.odom_pose)[0],3)),org=(2,90), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            cv2.putText(processe_f[7], text="pose y: "+str(round(self.pose3d_to_2d(self.odom_pose)[1],3)),org=(2,100), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            cv2.putText(processe_f[7], text="pose theta: "+str(round(self.pose3d_to_2d(self.odom_pose)[2],3)),org=(2,110), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            cv2.putText(processe_f[7], text="dif theta: "+str(angulo_prueba),org=(2,120), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+        cv2.putText(processe_f[7], text="circ theta: "+str(anglecirc),org=(2,130), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+        cv2.putText(processe_f[7], text="shape: "+str(len(self.future_pos)),org=(2,140), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+
+
 
 
 
 
         horizontal = np.concatenate((processe_f[0],processe_f[2],image3), axis=1)
         #self.get_logger().info(f"h: {np.shape(horizontal)} , log:{ np.shape(processe_f[7])} ")
-        werbonauta = np.concatenate((horizontal,processe_f[7]), axis=0)
-        t=cv2.imwrite(os.path.join(self.path ,'src/RoboticsProject2022/video',"image_"+str(self.c_fps)+".png"), werbonauta)
+        horizontalf = np.concatenate((horizontal,processe_f[7]), axis=0)
+        t=cv2.imwrite(os.path.join(self.path ,'src/RoboticsProject2022/video',"image_"+str(self.c_fps)+".png"), horizontalf)
 
-        cv2.imshow('Processed images',werbonauta)
+        cv2.imshow('Processed images',horizontalf)
         
         cv2.waitKey(1)
 
@@ -418,10 +458,10 @@ class ControllerNode(Node):
                 #canvas = cv2.line(canvas,(line[0],line[2]), (line[1],line[3]), (255, 255, 255), 2)
             
             #cv2.putText(image_re, text="a: "+str(average_angle),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
-            cv2.putText(image_re, text="avg angle: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            #cv2.putText(image_re, text="avg angle: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
 
-            #cv2.putText(canvas, text="a: "+str(average_angle),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
-            cv2.putText(canvas, text="1 angle: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            cv2.putText(canvas, text="avg angle: "+str(average_angle),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            cv2.putText(canvas, text="fst angle: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
 
         return image_re ,blur,th2,edges,average_angle,r_angle,l_found,canvas
 
@@ -450,6 +490,7 @@ class ControllerNode(Node):
         #https://opencv24-python-tutorials.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_houghlines/py_houghlines.html
         all_lines = []
         if lines is not None:
+            l_found=True
             for line in lines:
 
                 for x1,y1,x2,y2 in line:
@@ -459,21 +500,18 @@ class ControllerNode(Node):
                     a+=x2-x1
                     b+=y2-y1
 
-                    r_angle = round(atan2(x2-x1,y2-y1),2)
+                    r_angle = atan2(x2-x1,y2-y1)
                         
                         
             s=np.shape(lines)
-            average_angle = round(atan2(a/s[0],b/s[0]),2)
+            average_angle = atan2(a/s[0],b/s[0])
             
             
 
-            cv2.putText(image_re, text="a: "+str(average_angle),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
-            cv2.putText(image_re, text="r: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            #cv2.putText(image_re, text="a: "+str(average_angle),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
+            #cv2.putText(image_re, text="r: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
 
-            cv2.putText(canvas, text="a: "+str(average_angle),org=(2,10), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(50,250,240), thickness=1)
-            cv2.putText(canvas, text="r: "+str(r_angle),org=(2,20), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=.80, color=(200,250,240), thickness=1)
-        
-        circles = cv2.HoughCircles(edges,cv2.HOUGH_GRADIENT,1,20,param1=50,param2=15,minRadius=5,maxRadius=20)
+        circles = cv2.HoughCircles(edges,cv2.HOUGH_GRADIENT,1,20,param1=50,param2=15,minRadius=5,maxRadius=30)
 
         
         #if circles is not None:
