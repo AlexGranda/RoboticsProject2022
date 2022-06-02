@@ -33,3 +33,5 @@ We have recorded evidence of some successful attempts, you can find them in the 
 - [Attempt using Hough Lines](https://www.youtube.com/watch?v=s-vljXK2NkY&ab_channel=AlexandraGranda)
 - [Final successful attempt in a closed path](https://www.youtube.com/watch?v=79j3lSkaLQE&ab_channel=AlexandraGranda)
 
+- [Slides for the presentation](https://docs.google.com/presentation/d/1wU200oONutwZSY4lgjzsHTw78233i9tu06cGSndiVps/edit?usp=sharing)
+
