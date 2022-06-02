@@ -24,6 +24,8 @@ As can be observed from the command, the robot is called `RM0`. Once the connect
 ros2 launch RoboticsProject2022 project.launch.py name:=RM0 serial_number:=RM0
 ```
 
+Most of the logic implemented for the present project can be found in the `controller_node.py` file. The rest of the files are just to make it work and connect with Coppelia.
+
 Some of the experimental results of processing images obtained with the camera of the RoboMaster can be found in the file called `RoboticsProject2022.ipynb`, that can be found in the main directory of the project.
 
 We have recorded evidence of some successful attempts, you can find them in the following links:
